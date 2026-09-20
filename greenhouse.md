@@ -1,4 +1,5 @@
-最後一版的 **`index.html`** 是一個「零外部相依（Zero-Dependency）」的單檔案工控 Web SCADA 儀表板。它將所有的 HTML 結構、CSS 樣式、Canvas 向量繪圖引擎以及雙向 WebSocket 通訊邏輯完整封裝在單一檔案內，不需要連外網下載任何字型、圖示或 JavaScript 函式庫（如 Chart.js、Bootstrap）。
+**`index.html`** 是一個「零外部相依（Zero-Dependency）」的單檔案工控 Web SCADA 儀表板。
+它將所有的 HTML 結構、CSS 樣式、Canvas 向量繪圖引擎以及雙向 WebSocket 通訊邏輯完整封裝在單一檔案內，不需要連外網下載任何字型、圖示或 JavaScript 函式庫（如 Chart.js、Bootstrap）。
 
 以下為這份 `index.html` 的核心模組拆解與工程設計解析：
 
@@ -38,7 +39,6 @@
 * **Wi-Fi 訊號（RSSI）**：以 dBm 監控無線連線品質。
 
 
-
 ---
 
 #### 2. 四軌向量扇形儀表卡片（帶有邊緣計算衍生指標）
@@ -64,7 +64,6 @@
 4. **二氧化碳與 VOC / 照度（SCD40 + SGP40 + BH1750）**：
 * 量程：`400 ~ 2000 ppm`。
 * 副標籤整合 **VOC 異味指數**（Sensirion 演算法 0~500）與 **環境光度（Lux）**。
-
 
 
 ---
