@@ -1,0 +1,702 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>工控級多維環境遙測與閉迴路控制系統</title>
+  <style>
+    :root {
+      --bg-color: #050811;
+      --card-bg: #080d1a;
+      --border-color: #162032;
+      --green: #00ff88;
+      --yellow: #ffb700;
+      --red: #ff0055;
+      --cyan: #00d2ff;
+      --purple: #c084fc;
+      --amber: #fbbf24;
+      --text-dim: #64748b;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; user-select: none; -webkit-user-select: none; }
+    body {
+      background-color: var(--bg-color); color: #f1f5f9;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, monospace;
+      min-height: 100vh; display: flex; flex-direction: column; align-items: center; padding: 12px 10px 30px;
+    }
+
+    /* 頂部自診斷 Ribbon */
+    .diag-ribbon {
+      width: 100%; max-width: 1200px; background: #0b1120; border: 1px solid var(--border-color);
+      border-radius: 8px; padding: 8px 14px; margin-bottom: 12px;
+      display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center;
+      font-family: monospace; font-size: 0.76rem; gap: 8px;
+    }
+    .diag-item { display: flex; align-items: center; gap: 6px; }
+    .diag-val { color: var(--green); font-weight: bold; }
+
+    /* 主儀表 4 欄網格 */
+    .dashboard-grid {
+      display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+      gap: 14px; width: 100%; max-width: 1200px;
+    }
+    .telemetry-card {
+      background: var(--card-bg); border: 1px solid var(--border-color); border-radius: 12px;
+      padding: 12px 6px; display: flex; flex-direction: column; align-items: center; position: relative;
+      transition: border-color 0.3s, box-shadow 0.3s;
+    }
+
+    /* 動作中的霓虹外框光暈 */
+    .telemetry-card.fan-active {
+      border-color: var(--red) !important;
+      box-shadow: 0 0 16px rgba(255, 0, 85, 0.45);
+    }
+    .telemetry-card.hum-active {
+      border-color: var(--cyan) !important;
+      box-shadow: 0 0 16px rgba(0, 210, 255, 0.45);
+    }
+
+    canvas.gauge-canvas { width: 250px; height: 135px; display: block; }
+    .telemetry-val { font-size: 1.85rem; font-weight: bold; margin-top: 6px; font-family: monospace; text-align: center; }
+
+    .telemetry-sub-badge {
+      display: flex; gap: 8px; font-family: monospace; font-size: 0.74rem; color: #94a3b8;
+      background: #0f172a; padding: 3px 8px; border-radius: 4px; margin: 4px 0 10px;
+    }
+    .badge-hl { color: var(--cyan); font-weight: bold; }
+
+    .led-row { display: flex; justify-content: center; gap: 10px; width: 100%; }
+    .led-unit { display: flex; flex-direction: column; align-items: center; width: 58px; }
+    .led-circle { width: 22px; height: 22px; border-radius: 50%; background: #0b111e; border: 2px solid #1e293b; margin-bottom: 4px; }
+    .led-title { font-size: 0.70rem; font-weight: bold; color: #475569; }
+    .led-sub { font-size: 0.62rem; color: #334155; }
+
+    .led-unit.active.green .led-circle { background: var(--green); border-color: #fff; animation: p-g 1.4s infinite; }
+    .led-unit.active.green .led-title { color: var(--green); }
+    .led-unit.active.yellow .led-circle { background: var(--yellow); border-color: #fff; animation: p-y 1.4s infinite; }
+    .led-unit.active.yellow .led-title { color: var(--yellow); }
+    .led-unit.active.red .led-circle { background: var(--red); border-color: #fff; animation: p-r 1.4s infinite; }
+    .led-unit.active.red .led-title { color: var(--red); }
+
+    @-webkit-keyframes p-g { 0%,100%{box-shadow:0 0 4px rgba(0,255,136,.3);} 50%{box-shadow:0 0 18px rgba(0,255,136,.9);} }
+    @keyframes p-g { 0%,100%{box-shadow:0 0 4px rgba(0,255,136,.3);} 50%{box-shadow:0 0 18px rgba(0,255,136,.9);} }
+    @-webkit-keyframes p-y { 0%,100%{box-shadow:0 0 4px rgba(255,183,0,.3);} 50%{box-shadow:0 0 18px rgba(255,183,0,.9);} }
+    @keyframes p-y { 0%,100%{box-shadow:0 0 4px rgba(255,183,0,.3);} 50%{box-shadow:0 0 18px rgba(255,183,0,.9);} }
+    @-webkit-keyframes p-r { 0%,100%{box-shadow:0 0 4px rgba(255,0,85,.3);} 50%{box-shadow:0 0 18px rgba(255,0,85,.9);} }
+    @keyframes p-r { 0%,100%{box-shadow:0 0 4px rgba(255,0,85,.3);} 50%{box-shadow:0 0 18px rgba(255,0,85,.9);} }
+
+    /* =========================================================================
+       工控執行機構控制台樣式 (Actuator Console)
+       ========================================================================= */
+    .control-console {
+      width: 100%; max-width: 1200px; margin-top: 14px;
+      display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+      gap: 14px;
+    }
+    .ctrl-card {
+      background: var(--card-bg); border: 1px solid var(--border-color); border-radius: 12px;
+      padding: 14px 18px; display: flex; flex-direction: column; gap: 10px;
+    }
+    .ctrl-header {
+      display: flex; justify-content: space-between; align-items: center;
+      border-bottom: 1px solid #162032; padding-bottom: 8px;
+    }
+    .ctrl-title { font-size: 0.82rem; font-weight: bold; letter-spacing: 1px; color: #cbd5e1; }
+    
+    .ctrl-status-tag {
+      font-family: monospace; font-size: 0.72rem; font-weight: bold;
+      padding: 3px 8px; border-radius: 4px; background: #162032; color: #64748b;
+    }
+    .ctrl-status-tag.active-fan {
+      background: rgba(255, 0, 85, 0.2); color: var(--red); border: 1px solid var(--red);
+      animation: flash-run 0.8s infinite alternate;
+    }
+    .ctrl-status-tag.active-hum {
+      background: rgba(0, 210, 255, 0.2); color: var(--cyan); border: 1px solid var(--cyan);
+      animation: flash-run 1.2s infinite alternate;
+    }
+    @keyframes flash-run { 0% { opacity: 0.6; } 100% { opacity: 1.0; } }
+
+    .ctrl-row { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+    .ctrl-desc { font-size: 0.74rem; color: #64748b; }
+    .ctrl-threshold { font-size: 0.68rem; color: #94a3b8; font-family: monospace; }
+
+    /* 觸控強化按鈕群 (高度 38~40px) */
+    .btn-group { display: inline-flex; border-radius: 6px; overflow: hidden; border: 1px solid #1e293b; }
+    .ctrl-btn {
+      background: #0f172a; color: #64748b; border: none; outline: none;
+      min-height: 38px; padding: 0 16px; font-family: monospace; font-size: 0.76rem; font-weight: bold;
+      cursor: pointer; transition: all 0.2s; display: inline-flex; align-items: center; justify-content: center;
+    }
+    .ctrl-btn:hover:not(:disabled) { color: #f1f5f9; background: #1e293b; }
+    .ctrl-btn.active-auto { background: var(--green); color: #050811; }
+    .ctrl-btn.active-manual { background: var(--yellow); color: #050811; }
+    .ctrl-btn.active-fan-on { background: var(--red); color: #fff; box-shadow: 0 0 12px rgba(255,0,85,0.4); }
+    .ctrl-btn.active-hum-on { background: var(--cyan); color: #050811; box-shadow: 0 0 12px rgba(0,210,255,0.4); }
+    .ctrl-btn.active-off { background: #1e293b; color: #94a3b8; }
+    .ctrl-btn:disabled { opacity: 0.35; cursor: not-allowed; }
+
+    /* 折線圖區域 */
+    .chart-section {
+      width: 100%; max-width: 1200px; margin-top: 14px; background: var(--card-bg);
+      border: 1px solid var(--border-color); border-radius: 12px; padding: 12px 14px 10px;
+    }
+    .chart-header { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 10px; margin-bottom: 8px; font-size: 0.76rem; font-family: monospace; }
+    .chart-legend { display: flex; flex-wrap: wrap; gap: 12px; }
+    .legend-item { display: flex; align-items: center; gap: 4px; }
+    .dot { width: 10px; height: 3px; border-radius: 2px; }
+    canvas.trend-canvas { width: 100%; height: 180px; display: block; }
+  </style>
+</head>
+<body>
+
+  <!-- 頂部自診斷 Ribbon -->
+  <div class="diag-ribbon">
+    <div class="diag-item"><span>節點位址:</span> <span class="diag-val" id="dHost">ESP32</span></div>
+    <div class="diag-item"><span>運作時間:</span> <span class="diag-val" id="dUptime">00:00:00</span></div>
+    <div class="diag-item"><span>可用記憶體:</span> <span class="diag-val" id="dHeap">-- KB</span></div>
+    <div class="diag-item"><span>大氣壓力:</span> <span class="diag-val" id="dPres">-- hPa</span></div>
+    <div class="diag-item"><span>Wi-Fi 訊號:</span> <span class="diag-val" id="dRssi">-- dBm</span></div>
+  </div>
+
+  <div class="dashboard-grid">
+    <!-- 1. 環境氣溫 (SHT30) -->
+    <div class="telemetry-card">
+      <canvas id="gaugeTemp" class="gauge-canvas"></canvas>
+      <div id="valTemp" class="telemetry-val" style="color: var(--green);">--.- °C</div>
+      <div class="telemetry-sub-badge">
+        <span>VPD: <span class="badge-hl" id="subVpd">-- kPa</span></span>
+        <span>露點: <span class="badge-hl" id="subDew">-- °C</span></span>
+      </div>
+      <div class="led-row">
+        <div id="ledT0" class="led-unit green active"><div class="led-circle"></div><div class="led-title">LOW</div><div class="led-sub">≤22°</div></div>
+        <div id="ledT1" class="led-unit yellow"><div class="led-circle"></div><div class="led-title">NORM</div><div class="led-sub">23~28°</div></div>
+        <div id="ledT2" class="led-unit red"><div class="led-circle"></div><div class="led-title">HIGH</div><div class="led-sub">≥29°</div></div>
+      </div>
+    </div>
+
+    <!-- 2. 相對濕度 (SHT30 + 微霧加濕連動) -->
+    <div class="telemetry-card" id="cardHum">
+      <canvas id="gaugeHum" class="gauge-canvas"></canvas>
+      <div id="valHum" class="telemetry-val" style="color: var(--green);">--.- %</div>
+      <div class="telemetry-sub-badge">
+        <span>加濕狀態: <span class="badge-hl" id="subHumAction" style="color:var(--text-dim);">待命</span></span>
+      </div>
+      <div class="led-row">
+        <div id="ledH0" class="led-unit green active"><div class="led-circle"></div><div class="led-title">DRY</div><div class="led-sub">≤70%</div></div>
+        <div id="ledH1" class="led-unit yellow"><div class="led-circle"></div><div class="led-title">HUMID</div><div class="led-sub">71~80%</div></div>
+        <div id="ledH2" class="led-unit red"><div class="led-circle"></div><div class="led-title">CRIT</div><div class="led-sub">≥81%</div></div>
+      </div>
+    </div>
+
+    <!-- 3. 物料芯溫 (DS18B20 + 排風散熱連動) -->
+    <div class="telemetry-card" id="cardCore">
+      <canvas id="gaugeCore" class="gauge-canvas"></canvas>
+      <div id="valCore" class="telemetry-val" style="color: var(--green);">--.- °C</div>
+      <div class="telemetry-sub-badge">
+        <span>溫差 ΔT: <span class="badge-hl" id="subDeltaT">-- °C</span></span>
+        <span>散熱狀態: <span class="badge-hl" id="subFanAction" style="color:var(--text-dim);">待命</span></span>
+      </div>
+      <div class="led-row">
+        <div id="ledTC0" class="led-unit green active"><div class="led-circle"></div><div class="led-title">SAFE</div><div class="led-sub">&lt;25°</div></div>
+        <div id="ledTC1" class="led-unit yellow"><div class="led-circle"></div><div class="led-title">WARN</div><div class="led-sub">25~30°</div></div>
+        <div id="ledTC2" class="led-unit red"><div class="led-circle"></div><div class="led-title">ALARM</div><div class="led-sub">&gt;30°</div></div>
+      </div>
+    </div>
+
+    <!-- 4. 二氧化碳與 VOC / 光度 -->
+    <div class="telemetry-card">
+      <canvas id="gaugeCo2" class="gauge-canvas"></canvas>
+      <div id="valCo2" class="telemetry-val" style="color: var(--green);">---- ppm</div>
+      <div class="telemetry-sub-badge">
+        <span>VOC: <span class="badge-hl" id="subVoc">--</span></span>
+        <span>光照: <span class="badge-hl" id="subLux">-- Lx</span></span>
+      </div>
+      <div class="led-row">
+        <div id="ledC0" class="led-unit green active"><div class="led-circle"></div><div class="led-title">FRESH</div><div class="led-sub">≤800</div></div>
+        <div id="ledC1" class="led-unit yellow"><div class="led-circle"></div><div class="led-title">STALE</div><div class="led-sub">800~1200</div></div>
+        <div id="ledC2" class="led-unit red"><div class="led-circle"></div><div class="led-title">VENT!</div><div class="led-sub">≥1200</div></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- =======================================================================
+       執行機構工控控制台 (ACTUATOR CONTROL CONSOLE)
+       ======================================================================= -->
+  <div class="control-console">
+    <!-- 通道 1: 降溫排風扇 -->
+    <div class="ctrl-card">
+      <div class="ctrl-header">
+        <span class="ctrl-title">降溫排風扇 (RELAY 18)</span>
+        <span class="ctrl-status-tag" id="tagFanStatus">STANDBY (停止)</span>
+      </div>
+      <div class="ctrl-row">
+        <span class="ctrl-desc">運作模式:</span>
+        <div class="btn-group">
+          <button class="ctrl-btn active-auto" id="btnFanAuto" onclick="sendCmd('fan_mode','auto')">自動 AUTO</button>
+          <button class="ctrl-btn" id="btnFanManual" onclick="sendCmd('fan_mode','manual')">手動 MANUAL</button>
+        </div>
+      </div>
+      <div class="ctrl-row">
+        <span class="ctrl-desc">手動強制開關:</span>
+        <div class="btn-group">
+          <button class="ctrl-btn" id="btnFanOn" disabled onclick="sendCmd('fan_power',1)">強制啟動 ON</button>
+          <button class="ctrl-btn active-off" id="btnFanOff" disabled onclick="sendCmd('fan_power',0)">強制停止 OFF</button>
+        </div>
+      </div>
+      <div class="ctrl-threshold" id="descFanRule">
+        ● 自動條件：芯溫 ≥ 30.0°C 啟動，冷卻至 ≤ 28.5°C 復歸
+      </div>
+    </div>
+
+    <!-- 通道 2: 環境微霧加濕器 -->
+    <div class="ctrl-card">
+      <div class="ctrl-header">
+        <span class="ctrl-title">微霧加濕器 (RELAY 19)</span>
+        <span class="ctrl-status-tag" id="tagHumStatus">STANDBY (停止)</span>
+      </div>
+      <div class="ctrl-row">
+        <span class="ctrl-desc">運作模式:</span>
+        <div class="btn-group">
+          <button class="ctrl-btn active-auto" id="btnHumAuto" onclick="sendCmd('hum_mode','auto')">自動 AUTO</button>
+          <button class="ctrl-btn" id="btnHumManual" onclick="sendCmd('hum_mode','manual')">手動 MANUAL</button>
+        </div>
+      </div>
+      <div class="ctrl-row">
+        <span class="ctrl-desc">手動強制開關:</span>
+        <div class="btn-group">
+          <button class="ctrl-btn" id="btnHumOn" disabled onclick="sendCmd('hum_power',1)">強制啟動 ON</button>
+          <button class="ctrl-btn active-off" id="btnHumOff" disabled onclick="sendCmd('hum_power',0)">強制停止 OFF</button>
+        </div>
+      </div>
+      <div class="ctrl-threshold" id="descHumRule">
+        ● 自動條件：濕度 ≤ 70.0% 啟動補水，回升至 ≥ 78.0% 停止
+      </div>
+    </div>
+  </div>
+
+  <!-- 下方多軸歷史折線圖 -->
+  <div class="chart-section">
+    <div class="chart-header">
+      <span style="color: #64748b; font-weight: bold;">10 MINUTE MULTI-AXIS TELEMETRY TREND</span>
+      <div class="chart-legend">
+        <div class="legend-item"><div class="dot" style="background:var(--green);"></div><span style="color:var(--green);">氣溫 (15-35°C)</span></div>
+        <div class="legend-item"><div class="dot" style="background:#ff3b30;"></div><span style="color:#ff3b30;">芯溫 (15-35°C)</span></div>
+        <div class="legend-item"><div class="dot" style="background:var(--cyan);"></div><span style="color:var(--cyan);">濕度 (60-90%)</span></div>
+        <div class="legend-item"><div class="dot" style="background:var(--purple);"></div><span style="color:var(--purple);">CO2 (400-2000ppm)</span></div>
+      </div>
+    </div>
+    <canvas id="trendChart" class="trend-canvas"></canvas>
+  </div>
+
+  <script>
+    // =========================================================================
+    // 1. 向量扇形儀表類別 (具備 iPad 3 / 老舊 Android 降級防呆)
+    // =========================================================================
+    class WebSectorGauge {
+      constructor(id, minVal, maxVal, t1, t2) {
+        this.canvas = document.getElementById(id);
+        this.ctx = this.canvas.getContext('2d');
+        this.minVal = minVal; this.maxVal = maxVal; this.t1 = t1; this.t2 = t2;
+        this.currentVal = minVal;
+        this.w = 250; this.h = 135;
+        const dpr = window.devicePixelRatio || 1;
+        this.canvas.width = this.w * dpr; this.canvas.height = this.h * dpr;
+        this.ctx.scale(dpr, dpr);
+        this.hasConic = typeof this.ctx.createConicGradient === 'function';
+      }
+
+      setValue(v) { this.currentVal = Math.max(this.minVal, Math.min(this.maxVal, v)); this.render(); }
+
+      render() {
+        const ctx = this.ctx, cx = 125, cy = 120, r = 80, span = this.maxVal - this.minVal;
+        ctx.clearRect(0, 0, this.w, this.h);
+
+        ctx.beginPath(); ctx.arc(cx, cy, r, Math.PI, 2 * Math.PI);
+        ctx.lineWidth = 8; ctx.strokeStyle = '#1e293b'; ctx.stroke();
+
+        const r1 = (this.t1 - this.minVal) / span, r2 = (this.t2 - this.minVal) / span;
+
+        if (this.hasConic) {
+          try {
+            const grad = ctx.createConicGradient(Math.PI, cx, cy);
+            grad.addColorStop(0.00, '#00ff88');
+            grad.addColorStop(Math.max(0.001, r1 * 0.5 - 0.025), '#00ff88');
+            grad.addColorStop(Math.min(r2 * 0.5 - 0.026, r1 * 0.5 + 0.025), '#ffb700');
+            grad.addColorStop(Math.max(r1 * 0.5 + 0.026, r2 * 0.5 - 0.025), '#ffb700');
+            grad.addColorStop(Math.min(0.499, r2 * 0.5 + 0.025), '#ff0055');
+            grad.addColorStop(0.50, '#ff0055');
+            ctx.beginPath(); ctx.arc(cx, cy, r, Math.PI, 2 * Math.PI);
+            ctx.strokeStyle = grad; ctx.stroke();
+          } catch(e) { this.hasConic = false; this.fallback(ctx, cx, cy, r, r1, r2); }
+        } else { this.fallback(ctx, cx, cy, r, r1, r2); }
+
+        ctx.font = 'bold 9px monospace'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+        const ticks = [
+          { t: `${Math.round(this.minVal)}`, r: 0, c: '#00ff88' },
+          { t: `${Math.round(this.t1)}`, r: r1, c: '#00ff88' },
+          { t: `${Math.round(this.t2)}`, r: r2, c: '#ffb700' },
+          { t: `${Math.round(this.maxVal)}`, r: 1, c: '#ff0055' }
+        ];
+        ticks.forEach(k => {
+          const rad = ((180 - k.r * 180) * Math.PI) / 180;
+          ctx.fillStyle = k.c; ctx.fillText(k.t, cx + (r + 13) * Math.cos(rad), cy - (r + 13) * Math.sin(rad));
+        });
+
+        const angleRad = Math.PI + ((this.currentVal - this.minVal) / span) * Math.PI;
+        let nCol = this.currentVal > this.t2 ? '#ff0055' : (this.currentVal >= this.t1 ? '#ffb700' : '#00ff88');
+        ctx.beginPath();
+        ctx.moveTo(cx + 68 * Math.cos(angleRad), cy + 68 * Math.sin(angleRad));
+        ctx.lineTo(cx + 3.5 * Math.cos(angleRad + Math.PI/2), cy + 3.5 * Math.sin(angleRad + Math.PI/2));
+        ctx.lineTo(cx - 3.5 * Math.cos(angleRad + Math.PI/2), cy - 3.5 * Math.sin(angleRad + Math.PI/2));
+        ctx.closePath(); ctx.fillStyle = nCol; ctx.fill();
+
+        ctx.beginPath(); ctx.arc(cx, cy, 7, 0, 2 * Math.PI); ctx.fillStyle = '#0f172a'; ctx.fill();
+        ctx.lineWidth = 2; ctx.strokeStyle = nCol; ctx.stroke();
+      }
+
+      fallback(ctx, cx, cy, r, r1, r2) {
+        ctx.beginPath(); ctx.arc(cx, cy, r, Math.PI, Math.PI + r1 * Math.PI); ctx.strokeStyle = '#00ff88'; ctx.stroke();
+        ctx.beginPath(); ctx.arc(cx, cy, r, Math.PI + r1 * Math.PI, Math.PI + r2 * Math.PI); ctx.strokeStyle = '#ffb700'; ctx.stroke();
+        ctx.beginPath(); ctx.arc(cx, cy, r, Math.PI + r2 * Math.PI, 2 * Math.PI); ctx.strokeStyle = '#ff0055'; ctx.stroke();
+      }
+    }
+
+    // =========================================================================
+    // 2. 原生 Canvas 4 軸多維趨勢圖
+    // =========================================================================
+    class SCADATrendChart {
+      constructor(id) {
+        this.canvas = document.getElementById(id);
+        this.ctx = this.canvas.getContext('2d');
+        this.ta = []; this.tc = []; this.h = []; this.c = []; this.maxLen = 60;
+        this.ranges = {
+          ta: { min: 15, max: 35, col: '#00ff88' },
+          tc: { min: 15, max: 35, col: '#ff3b30' },
+          h:  { min: 60, max: 90, col: '#00d2ff' },
+          c:  { min: 400, max: 2000, col: '#c084fc' }
+        };
+        this.resize();
+        window.addEventListener('resize', () => this.resize());
+      }
+      resize() {
+        const dpr = window.devicePixelRatio || 1;
+        this.w = this.canvas.clientWidth; this.h = this.canvas.clientHeight;
+        this.canvas.width = this.w * dpr; this.canvas.height = this.h * dpr;
+        this.ctx.scale(dpr, dpr); this.render();
+      }
+      setData(ta, tc, h, c) {
+        this.ta = ta.slice(-this.maxLen); this.tc = tc.slice(-this.maxLen);
+        this.h = h.slice(-this.maxLen); this.c = c.slice(-this.maxLen);
+        this.render();
+      }
+      pushPoint(ta, tc, h, c) {
+        this.ta.push(ta); if (this.ta.length > this.maxLen) this.ta.shift();
+        this.tc.push(tc); if (this.tc.length > this.maxLen) this.tc.shift();
+        this.h.push(h); if (this.h.length > this.maxLen) this.h.shift();
+        this.c.push(c); if (this.c.length > this.maxLen) this.c.shift();
+        this.render();
+      }
+      render() {
+        const ctx = this.ctx, w = this.w, h = this.h;
+        ctx.clearRect(0, 0, w, h);
+        if (this.ta.length === 0) return;
+
+        const padL = 30, padR = 15, padT = 15, padB = 22;
+        const cw = w - padL - padR, ch = h - padT - padB;
+
+        ctx.strokeStyle = '#162032'; ctx.lineWidth = 1;
+        for (let i = 0; i <= 3; i++) {
+          const y = padT + (ch / 3) * i;
+          ctx.beginPath(); ctx.moveTo(padL, y); ctx.lineTo(w - padR, y); ctx.stroke();
+        }
+
+        ctx.fillStyle = '#475569'; ctx.font = '10px monospace';
+        ctx.textAlign = 'left'; ctx.fillText("-10m", padL, h - 6);
+        ctx.textAlign = 'center'; ctx.fillText("-5m", padL + cw / 2, h - 6);
+        ctx.textAlign = 'right'; ctx.fillText("現在", w - padR, h - 6);
+
+        const drawLine = (arr, r) => {
+          if (arr.length < 2) return;
+          const stepX = cw / (this.maxLen - 1);
+          const startX = padL + (this.maxLen - arr.length) * stepX;
+          ctx.beginPath();
+          arr.forEach((v, i) => {
+            const x = startX + i * stepX;
+            const norm = (v - r.min) / (r.max - r.min);
+            const y = padT + ch - Math.max(0, Math.min(1, norm)) * ch;
+            if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+          });
+          ctx.strokeStyle = r.col; ctx.lineWidth = 2; ctx.stroke();
+        };
+
+        drawLine(this.ta, this.ranges.ta);
+        drawLine(this.tc, this.ranges.tc);
+        drawLine(this.h, this.ranges.h);
+        drawLine(this.c, this.ranges.c);
+      }
+    }
+
+    // =========================================================================
+    // 3. UI 初始化
+    // =========================================================================
+    const gT = new WebSectorGauge('gaugeTemp', 15.0, 35.0, 22.0, 28.0);
+    const gH = new WebSectorGauge('gaugeHum', 60.0, 90.0, 70.0, 80.0);
+    const gCore = new WebSectorGauge('gaugeCore', 15.0, 35.0, 25.0, 30.0);
+    const gCo2 = new WebSectorGauge('gaugeCo2', 400.0, 2000.0, 800.0, 1200.0);
+    const chart = new SCADATrendChart('trendChart');
+
+    function setLed(arr, idx) { arr.forEach((el, i) => el.classList.toggle('active', i === idx)); }
+    const ledsT = [document.getElementById('ledT0'), document.getElementById('ledT1'), document.getElementById('ledT2')];
+    const ledsH = [document.getElementById('ledH0'), document.getElementById('ledH1'), document.getElementById('ledH2')];
+    const ledsTC = [document.getElementById('ledTC0'), document.getElementById('ledTC1'), document.getElementById('ledTC2')];
+    const ledsC = [document.getElementById('ledC0'), document.getElementById('ledC1'), document.getElementById('ledC2')];
+
+    // =========================================================================
+    // 4. 遙測數值與執行機構即時渲染
+    // =========================================================================
+    function updateUI(d) {
+      if (d.heap) document.getElementById('dHeap').innerText = `${Math.round(d.heap/1024)} KB`;
+      if (d.pres) document.getElementById('dPres').innerText = `${d.pres.toFixed(1)} hPa`;
+      if (d.rssi) document.getElementById('dRssi').innerText = `${d.rssi} dBm`;
+      if (d.uptime !== undefined) {
+        const s = d.uptime % 60, m = Math.floor((d.uptime / 60) % 60), hr = Math.floor(d.uptime / 3600);
+        document.getElementById('dUptime').innerText = `${String(hr).padStart(2,'0')}:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
+      }
+
+      // 1. 氣溫
+      gT.setValue(d.ta);
+      document.getElementById('valTemp').innerText = `${d.ta.toFixed(1)} °C`;
+      document.getElementById('valTemp').style.color = d.ta <= 22 ? 'var(--green)' : (d.ta <= 28 ? 'var(--yellow)' : 'var(--red)');
+      setLed(ledsT, d.ta <= 22 ? 0 : (d.ta <= 28 ? 1 : 2));
+      document.getElementById('subVpd').innerText = `${d.vpd.toFixed(2)} kPa`;
+      document.getElementById('subDew').innerText = `${d.dew.toFixed(1)} °C`;
+
+      // 2. 濕度與加濕外框
+      gH.setValue(d.h);
+      document.getElementById('valHum').innerText = `${d.h.toFixed(1)} %`;
+      document.getElementById('valHum').style.color = d.h <= 70 ? 'var(--green)' : (d.h <= 80 ? 'var(--yellow)' : 'var(--red)');
+      setLed(ledsH, d.h <= 70 ? 0 : (d.h <= 80 ? 1 : 2));
+      
+      const cardHum = document.getElementById('cardHum');
+      const subHum = document.getElementById('subHumAction');
+      if (d.hum) {
+        cardHum.classList.add('hum-active');
+        subHum.innerText = "MISTING 💦";
+        subHum.style.color = "var(--cyan)";
+      } else {
+        cardHum.classList.remove('hum-active');
+        subHum.innerText = "STANDBY";
+        subHum.style.color = "var(--text-dim)";
+      }
+
+      // 3. 芯溫與排風散熱外框
+      gCore.setValue(d.tc);
+      document.getElementById('valCore').innerText = `${d.tc.toFixed(1)} °C`;
+      if (d.tc < 25.0) {
+        document.getElementById('valCore').style.color = 'var(--green)';
+        setLed(ledsTC, 0);
+      } else if (d.tc <= 30.0) {
+        document.getElementById('valCore').style.color = 'var(--yellow)';
+        setLed(ledsTC, 1);
+      } else {
+        document.getElementById('valCore').style.color = 'var(--red)';
+        setLed(ledsTC, 2);
+      }
+      const deltaT = d.tc - d.ta;
+      document.getElementById('subDeltaT').innerText = `${deltaT >= 0 ? '+' : ''}${deltaT.toFixed(1)} °C`;
+
+      const cardCore = document.getElementById('cardCore');
+      const subFan = document.getElementById('subFanAction');
+      if (d.fan) {
+        cardCore.classList.add('fan-active');
+        subFan.innerText = "COOLING 🌀";
+        subFan.style.color = "var(--red)";
+      } else {
+        cardCore.classList.remove('fan-active');
+        subFan.innerText = "STANDBY";
+        subFan.style.color = "var(--text-dim)";
+      }
+
+      // 4. CO2 / VOC / Lux
+      gCo2.setValue(d.c);
+      document.getElementById('valCo2').innerText = `${d.c} ppm`;
+      document.getElementById('valCo2').style.color = d.c <= 800 ? 'var(--green)' : (d.c <= 1200 ? 'var(--yellow)' : 'var(--red)');
+      setLed(ledsC, d.c <= 800 ? 0 : (d.c <= 1200 ? 1 : 2));
+      document.getElementById('subVoc').innerText = `${d.voc}`;
+      document.getElementById('subLux').innerText = `${Math.round(d.l)} Lx`;
+
+      // 5. 更新控制台狀態
+      updateControlConsole(d);
+    }
+
+    function updateControlConsole(d) {
+      // 排風控制盤
+      const btnFanAuto = document.getElementById('btnFanAuto');
+      const btnFanManual = document.getElementById('btnFanManual');
+      const btnFanOn = document.getElementById('btnFanOn');
+      const btnFanOff = document.getElementById('btnFanOff');
+      const tagFanStatus = document.getElementById('tagFanStatus');
+
+      if (d.fan_auto) {
+        btnFanAuto.className = "ctrl-btn active-auto";
+        btnFanManual.className = "ctrl-btn";
+        btnFanOn.disabled = true;
+        btnFanOff.disabled = true;
+      } else {
+        btnFanAuto.className = "ctrl-btn";
+        btnFanManual.className = "ctrl-btn active-manual";
+        btnFanOn.disabled = false;
+        btnFanOff.disabled = false;
+      }
+
+      if (d.fan) {
+        btnFanOn.className = "ctrl-btn active-fan-on";
+        btnFanOff.className = "ctrl-btn";
+        tagFanStatus.className = "ctrl-status-tag active-fan";
+        tagFanStatus.innerText = "RUNNING (排風中)";
+      } else {
+        btnFanOn.className = "ctrl-btn";
+        btnFanOff.className = "ctrl-btn active-off";
+        tagFanStatus.className = "ctrl-status-tag";
+        tagFanStatus.innerText = "STOPPED (停止)";
+      }
+
+      // 加濕控制盤
+      const btnHumAuto = document.getElementById('btnHumAuto');
+      const btnHumManual = document.getElementById('btnHumManual');
+      const btnHumOn = document.getElementById('btnHumOn');
+      const btnHumOff = document.getElementById('btnHumOff');
+      const tagHumStatus = document.getElementById('tagHumStatus');
+
+      if (d.hum_auto) {
+        btnHumAuto.className = "ctrl-btn active-auto";
+        btnHumManual.className = "ctrl-btn";
+        btnHumOn.disabled = true;
+        btnHumOff.disabled = true;
+      } else {
+        btnHumAuto.className = "ctrl-btn";
+        btnHumManual.className = "ctrl-btn active-manual";
+        btnHumOn.disabled = false;
+        btnHumOff.disabled = false;
+      }
+
+      if (d.hum) {
+        btnHumOn.className = "ctrl-btn active-hum-on";
+        btnHumOff.className = "ctrl-btn";
+        tagHumStatus.className = "ctrl-status-tag active-hum";
+        tagHumStatus.innerText = "MISTING (噴霧中)";
+      } else {
+        btnHumOn.className = "ctrl-btn";
+        btnHumOff.className = "ctrl-btn active-off";
+        tagHumStatus.className = "ctrl-status-tag";
+        tagHumStatus.innerText = "STOPPED (停止)";
+      }
+    }
+
+    // 發送控制命令至 ESP32
+    let ws = null;
+    let isWsLive = false;
+    let mockState = { fan: 0, fan_auto: 1, hum: 0, hum_auto: 1 };
+
+    function sendCmd(command, value) {
+      const payload = JSON.stringify({ cmd: command, val: value });
+      if (isWsLive && ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(payload);
+      } else {
+        // 離線展示模式下的本地手動切換模擬
+        if (command === 'fan_mode') mockState.fan_auto = (value === 'auto' ? 1 : 0);
+        if (command === 'fan_power') mockState.fan = value;
+        if (command === 'hum_mode') mockState.hum_auto = (value === 'auto' ? 1 : 0);
+        if (command === 'hum_power') mockState.hum = value;
+        updateControlConsole(mockState);
+      }
+    }
+
+    document.getElementById('dHost').innerText = window.location.hostname || "本機檔案預覽";
+
+    try {
+      const gateway = `ws://${window.location.hostname}/ws`;
+      ws = new WebSocket(gateway);
+      ws.onopen = () => { isWsLive = true; document.getElementById('dHost').innerText = `${window.location.hostname} (在線)`; };
+      ws.onmessage = (e) => {
+        const msg = JSON.parse(e.data);
+        if (msg.type === 'history') {
+          if (msg.ta && msg.ta.length > 0) chart.setData(msg.ta, msg.tc, msg.h, msg.c);
+        } else if (msg.type === 'live') {
+          chart.pushPoint(msg.ta, msg.tc, msg.h, msg.c);
+          updateUI(msg);
+        }
+      };
+      ws.onclose = () => { isWsLive = false; };
+      ws.onerror = () => { isWsLive = false; };
+    } catch(e) { isWsLive = false; }
+
+    // 離線雙模物理模擬
+    setTimeout(() => {
+      if (!isWsLive) {
+        document.getElementById('dHost').innerText = "離線閉迴路展示模式";
+        let simCount = 0, uptimeSim = 125, simTc = 24.5, simH = 72.0;
+
+        const taH = [], tcH = [], hH = [], cH = [];
+        for (let i = 0; i < 60; i++) {
+          taH.push(24.0); tcH.push(24.8); hH.push(72.0); cH.push(700);
+        }
+        chart.setData(taH, tcH, hH, cH);
+
+        setInterval(() => {
+          simCount += 0.08;
+          uptimeSim++;
+
+          // 1. 自動模式下的排風散熱動態 (>=30°C 啟動, <=28.5°C 復歸)
+          if (mockState.fan_auto) {
+            if (!mockState.fan) {
+              simTc += 0.28;
+              if (simTc >= 30.2) mockState.fan = 1;
+            } else {
+              simTc -= 0.35;
+              if (simTc <= 28.4) mockState.fan = 0;
+            }
+          } else {
+            if (mockState.fan) simTc = Math.max(22.0, simTc - 0.3);
+            else simTc += 0.15;
+          }
+
+          // 2. 自動模式下的微霧加濕動態 (<=70% 啟動, >=78% 停止)
+          if (mockState.hum_auto) {
+            if (!mockState.hum) {
+              simH -= 0.45;
+              if (simH <= 69.5) mockState.hum = 1;
+            } else {
+              simH += 0.60;
+              if (simH >= 78.5) mockState.hum = 0;
+            }
+          } else {
+            if (mockState.hum) simH = Math.min(95.0, simH + 0.5);
+            else simH -= 0.3;
+          }
+
+          const ta = 24.0 + Math.sin(simCount * 0.5) * 1.5;
+          const c = 750 + Math.round(Math.sin(simCount) * 120);
+
+          const vpsat = 0.61078 * Math.exp((17.27 * ta) / (ta + 237.3));
+          const vpd = vpsat * (1.0 - (simH / 100.0));
+          const alpha = ((17.27 * ta) / (237.7 + ta)) + Math.log(simH / 100.0);
+          const dew = (237.7 * alpha) / (17.27 - alpha);
+
+          const mockData = {
+            ta: ta, tc: simTc, h: simH, c: c, l: 450,
+            pres: 1013.2, voc: 110, vpd: vpd, dew: dew,
+            fan: mockState.fan, fan_auto: mockState.fan_auto,
+            hum: mockState.hum, hum_auto: mockState.hum_auto,
+            heap: 242000, rssi: -56, uptime: uptimeSim
+          };
+
+          chart.pushPoint(ta, simTc, simH, c);
+          updateUI(mockData);
+        }, 1000);
+      }
+    }, 1200);
+  </script>
+</body>
+</html>
