@@ -1,6 +1,7 @@
 零外部相依工控 Web SCADA 儀表板架構設計規格
-本專案 `index.html` 是一套專為邊緣工控節點（如 ESP32）打造的**「零外部相依（Zero-Dependency）」單檔案 Web SCADA 儀表板**。
-系統將所有 HTML DOM 結構、CSS 視覺樣式、原生 Canvas 向量繪圖引擎以及雙向 WebSocket 通訊邏輯完整封裝於單一檔案內，無須連外網請求字型、Icon 圖示或第三方 JavaScript 函式庫（如 Chart.js、Bootstrap），具備極高的離線獨立運作能力與即時性。
+
+# 本專案 `index.html` 是一套專為邊緣工控節點（如 ESP32）打造的**「零外部相依（Zero-Dependency）」單檔案 Web SCADA 儀表板**。
+## 系統將所有 HTML DOM 結構、CSS 視覺樣式、原生 Canvas 向量繪圖引擎以及雙向 WebSocket 通訊邏輯完整封裝於單一檔案內，無須連外網請求字型、Icon 圖示或第三方 JavaScript 函式庫（如 Chart.js、Bootstrap），具備極高的離線獨立運作能力與即時性。
 ---
 一、 核心功能架構
 ```plaintext
